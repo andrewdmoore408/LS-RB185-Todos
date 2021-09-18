@@ -78,6 +78,10 @@ class SessionPersistence
   end
 end
 
+#######################################################
+# Begin Sinatra code
+#######################################################
+
 configure do
   enable :sessions
   set :session_secret, 'secret'
