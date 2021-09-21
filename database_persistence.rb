@@ -53,13 +53,20 @@ class DatabasePersistence
   end
 
   def get_list(id)
-    list_sql = "SELECT * FROM lists WHERE id = $1"
-    list_result = query(list_sql, id)
+    sql = <<~SQL
+          SELECT lists.*,
+           COUNT(todos.id) AS todos_count,
+           COUNT(NULLIF(todos.completed, true)) AS todos_remaining_count
+           FROM lists
+           LEFT JOIN todos ON todos.list_id = lists.id
+           WHERE lists.id = $1
+           GROUP BY lists.id
+           ORDER BY lists.name;
+          SQL
 
-    todos = find_todos_for_list(id)
+    list_result = query(sql, id)
 
-    record = list_result.first
-    { id: record["id"], name: record["name"], todos: todos }
+    record_to_list_hash(list_result.first)
   end
 
   def list_name_taken?(list_name)
@@ -67,18 +74,21 @@ class DatabasePersistence
   end
 
   def lists
-    lists_sql = "SELECT * FROM lists;"
-    lists_result = query(lists_sql)
+    # optimized query
+    sql = <<~SQL
+          SELECT lists.*,
+           COUNT(todos.id) AS todos_count,
+           COUNT(NULLIF(todos.completed, true)) AS todos_remaining_count
+           FROM lists
+           LEFT JOIN todos ON todos.list_id = lists.id
+           GROUP BY lists.id
+           ORDER BY lists.name;
+          SQL
 
-    todos_sql = "SELECT * FROM todos;"
-    todos_result = query(todos_sql)
+    lists_result = query(sql)
 
     lists_result.map do |record|
-      list_id = record["id"].to_i
-
-      todos = find_todos_for_list(list_id)
-
-      { id: list_id, name: record["name"], todos: todos }
+      record_to_list_hash(record)
     end
   end
 
@@ -95,8 +105,6 @@ class DatabasePersistence
     query(sql, is_completed, list_id, todo_id)
   end
 
-  private
-
   def find_todos_for_list(list_id)
     todos_sql = "SELECT * FROM todos WHERE list_id = $1"
     todos_result = query(todos_sql, list_id)
@@ -106,5 +114,14 @@ class DatabasePersistence
           name: todo_row["name"],
           completed: todo_row["completed"] == 't' }
     end
+  end
+
+  private
+
+  def record_to_list_hash(record)
+    { id: record["id"].to_i,
+    name: record["name"],
+    todos_count: record["todos_count"].to_i,
+    todos_remaining_count: record["todos_remaining_count"].to_i }
   end
 end
